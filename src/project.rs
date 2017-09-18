@@ -21,8 +21,8 @@ impl<'c, 'o> Project<'c, 'o> {
     }
 
     pub fn graph(mut self) -> CliResult<DepGraph<'c, 'o>> {
-        let root_deps = try!(self.parse_root_deps());
-        let mut dg = try!(self.parse_lock_file());
+        let (root_deps, name, version) = try!(self.parse_root_deps());
+        let mut dg = try!(self.parse_lock_file(&name, &version));
         self.set_resolved_kind(&root_deps, &mut dg);
         if !self.cfg.include_vers {
             Project::show_version_on_duplicates(&mut dg);
@@ -121,20 +121,23 @@ impl<'c, 'o> Project<'c, 'o> {
     }
 
     /// Builds a graph of the resolved dependencies declared in the lock file.
-    fn parse_lock_file(&mut self) -> CliResult<DepGraph<'c, 'o>> {
+    fn parse_lock_file(&mut self,
+                       root_name: &str,
+                       root_version: &str)
+                       -> CliResult<DepGraph<'c, 'o>> {
         fn parse_package<'c, 'o>(dg: &mut DepGraph<'c, 'o>, pkg: &Value) {
             let name = pkg.lookup("name")
-                          .expect("no 'name' field in Cargo.lock [package] or [root] table")
-                          .as_str()
-                          .expect("'name' field of [package] or [root] table in Cargo.lock was not a \
+                .expect("no 'name' field in Cargo.lock [package] or [root] table")
+                .as_str()
+                .expect("'name' field of [package] or [root] table in Cargo.lock was not a \
                                    valid string")
-                          .to_owned();
+                .to_owned();
             let ver = pkg.lookup("version")
-                         .expect("no 'version' field in Cargo.lock [package] or [root] table")
-                         .as_str()
-                         .expect("'version' field of [package] or [root] table in Cargo.lock was not a \
+                .expect("no 'version' field in Cargo.lock [package] or [root] table")
+                .as_str()
+                .expect("'version' field of [package] or [root] table in Cargo.lock was not a \
                                   valid string")
-                         .to_owned();
+                .to_owned();
 
             let id = dg.find_or_add(&*name, &*ver);
 
@@ -153,6 +156,9 @@ impl<'c, 'o> Project<'c, 'o> {
 
         let mut dg = DepGraph::new(self.cfg);
 
+        // Use the specified package as the root
+        dg.find_or_add(root_name, root_version);
+
         if let Some(root) = lock_toml.get("root") {
             parse_package(&mut dg, root);
         } else {
@@ -170,13 +176,28 @@ impl<'c, 'o> Project<'c, 'o> {
     }
 
     /// Builds a list of the dependencies declared in the manifest file.
-    pub fn parse_root_deps(&mut self) -> CliResult<Vec<DeclaredDep>> {
+    pub fn parse_root_deps(&mut self) -> CliResult<(Vec<DeclaredDep>, String, String)> {
         debugln!("executing; parse_root_deps;");
         let manifest_path = try!(util::find_manifest_file(self.cfg.manifest_file));
         let manifest_toml = try!(util::toml_from_file(manifest_path));
 
         let mut declared_deps = vec![];
         let mut v = vec![];
+
+        let package = manifest_toml.get("package")
+            .expect("no [package] table in Cargo.toml");
+        let name = package.lookup("name")
+            .expect("no 'name' field in Cargo.toml [package] table")
+            .as_str()
+            .expect("'name' field of [package] table in Cargo.toml was not a \
+                                   valid string")
+            .to_owned();
+        let version = package.lookup("version")
+            .expect("no 'version' field in Cargo.toml [package] table")
+            .as_str()
+            .expect("'version' field of [package] table in Cargo.toml was not a \
+                                   valid string")
+            .to_owned();
 
         if let Some(table) = manifest_toml.get("dependencies") {
             if let Some(table) = table.as_table() {
@@ -202,6 +223,6 @@ impl<'c, 'o> Project<'c, 'o> {
 
         debugln!("return=parse_root_deps; self={:#?}", self);
         debugln!("return=parse_root_deps; declared_deps={:#?}", declared_deps);
-        Ok(declared_deps)
+        Ok((declared_deps, name, version))
     }
 }
