@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use toml::Value;
 
@@ -21,8 +21,22 @@ impl<'c, 'o> Project<'c, 'o> {
     }
 
     pub fn graph(mut self) -> CliResult<DepGraph<'c, 'o>> {
-        let (root_deps, name, version) = try!(self.parse_root_deps());
-        let mut dg = try!(self.parse_lock_file(&name, &version));
+        let root_path = try!(util::find_manifest_file(&self.cfg.manifest_file));
+        let root_toml = try!(util::toml_from_file(root_path));
+        if let Some(workspace) = root_toml.get("workspace") {
+            if let Some(&Value::Array(ref members)) = pkg.lookup("members") {
+                
+            }
+        }
+
+        let (root_deps, root_name, root_version) = try!(self.parse_manifest_deps(&self.cfg.manifest_files[0]));
+        let mut dep_hash = HashMap::new();
+        dep_hash.insert((root_name.clone(), root_version.clone()), root_deps.clone());
+        for m in self.cfg.manifest_files[1..].iter() {
+            let (deps, name, version) = try!(self.parse_manifest_deps(m));
+            dep_hash.insert((name, version), deps);
+        }
+        let mut dg = try!(self.parse_lock_file(&root_name, &root_version, &dep_hash));
         self.set_resolved_kind(&root_deps, &mut dg);
         if !self.cfg.include_vers {
             Project::show_version_on_duplicates(&mut dg);
@@ -123,9 +137,11 @@ impl<'c, 'o> Project<'c, 'o> {
     /// Builds a graph of the resolved dependencies declared in the lock file.
     fn parse_lock_file(&mut self,
                        root_name: &str,
-                       root_version: &str)
+                       root_version: &str,
+                       dep_hash: &HashMap<(String, String), Vec<DeclaredDep>>)
                        -> CliResult<DepGraph<'c, 'o>> {
-        fn parse_package<'c, 'o>(dg: &mut DepGraph<'c, 'o>, pkg: &Value) {
+        fn parse_package<'c, 'o>(dg: &mut DepGraph<'c, 'o>, pkg: &Value,
+                                 dep_hash: &HashMap<(String, String), Vec<DeclaredDep>>) {
             let name = pkg.lookup("name")
                 .expect("no 'name' field in Cargo.lock [package] or [root] table")
                 .as_str()
@@ -142,11 +158,23 @@ impl<'c, 'o> Project<'c, 'o> {
             let id = dg.find_or_add(&*name, &*ver);
 
             if let Some(&Value::Array(ref deps)) = pkg.lookup("dependencies") {
-                for dep in deps {
+               let deps_filter = dep_hash.get(&(name, ver)).map(|deps| {
+                   let mut set = HashSet::new();
+                   for dep in deps {
+                       match dep.kind {
+                           DepKind::Build | DepKind::Unk => { set.insert(&dep.name); },
+                           _ => ()
+                       };
+                   }
+                   set
+               });
+               for dep in deps {
                     let dep_vec = dep.as_str().unwrap_or("").split(' ').collect::<Vec<_>>();
                     let dep_string = dep_vec[0].to_owned();
                     let ver = dep_vec[1];
-                    dg.add_child(id, &*dep_string, ver);
+                    if deps_filter.as_ref().map(|deps_set| deps_set.contains(&dep_string)).unwrap_or(true) {
+                        dg.add_child(id, &*dep_string, ver);
+                    }
                 }
             }
         }
@@ -160,14 +188,14 @@ impl<'c, 'o> Project<'c, 'o> {
         dg.find_or_add(root_name, root_version);
 
         if let Some(root) = lock_toml.get("root") {
-            parse_package(&mut dg, root);
+            parse_package(&mut dg, root, dep_hash);
         } else {
             return Err(From::from(CliErrorKind::TomlTableRoot));
         }
 
         if let Some(&Value::Array(ref packages)) = lock_toml.get("package") {
             for pkg in packages {
-                parse_package(&mut dg, pkg);
+                parse_package(&mut dg, pkg, dep_hash);
             }
         }
 
@@ -176,9 +204,9 @@ impl<'c, 'o> Project<'c, 'o> {
     }
 
     /// Builds a list of the dependencies declared in the manifest file.
-    pub fn parse_root_deps(&mut self) -> CliResult<(Vec<DeclaredDep>, String, String)> {
-        debugln!("executing; parse_root_deps;");
-        let manifest_path = try!(util::find_manifest_file(self.cfg.manifest_file));
+    pub fn parse_manifest_deps(&mut self, manifest: &str) -> CliResult<(String, String, Vec<DeclaredDep>)> {
+        debugln!("executing; parse_manifest_deps;");
+        let manifest_path = try!(util::find_manifest_file(manifest));
         let manifest_toml = try!(util::toml_from_file(manifest_path));
 
         let mut declared_deps = vec![];
@@ -221,8 +249,8 @@ impl<'c, 'o> Project<'c, 'o> {
             }
         }
 
-        debugln!("return=parse_root_deps; self={:#?}", self);
-        debugln!("return=parse_root_deps; declared_deps={:#?}", declared_deps);
-        Ok((declared_deps, name, version))
+        debugln!("return=parse_manifest_deps; self={:#?}", self);
+        debugln!("return=parse_manifest_deps; declared_deps={:#?}", declared_deps);
+        Ok((name, version, declared_deps))
     }
 }

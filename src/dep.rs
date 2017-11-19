@@ -10,7 +10,7 @@ pub enum DepKind {
     Unk,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DeclaredDep {
     pub name: String,
     pub kind: DepKind,

@@ -257,6 +257,7 @@ fn parse_cli<'a>() -> ArgMatches<'a> {
                         .args_from_usage("
                             -I, --include-versions 'Include the dependency version on nodes'
                                 --dot-file [PATH] 'Output file (Default stdout)'
+                                --external-deps [true|false] 'Should dependencies of external crates be included in the graph? (Default true, also allows yes|no)'
                                 --dev-deps [true|false] 'Should dev deps be included in the graph? (Default false, also allows yes|no)'
                                 --build-deps [true|false] 'Should build deps be in the graph? (Default true, also allows yes|no)'
                                 --optional-deps [true|false] 'Should optional deps be in the graph? (Default true, also allows yes|no)'

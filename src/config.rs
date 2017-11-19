@@ -123,6 +123,7 @@ pub struct Config<'a> {
     pub dev_lines: LineStyle,
     pub build_lines: LineStyle,
     pub optional_lines: LineStyle,
+    pub external_deps: bool,
     pub dev_deps: bool,
     pub build_deps: bool,
     pub optional_deps: bool,
@@ -139,6 +140,7 @@ impl<'a> Config<'a> {
             lock_file: m.value_of("lock-file").unwrap_or("Cargo.lock"),
             manifest_file: m.value_of("manifest-file").unwrap_or("Cargo.toml"),
             dot_file: m.value_of("dot-file"),
+            external_deps: try!(m.value_of("external-deps").unwrap_or("true").parse_arg())
             dev_deps: try!(m.value_of("dev-deps").unwrap_or("false").parse_arg()),
             build_deps: try!(m.value_of("build-deps").unwrap_or("true").parse_arg()),
             optional_deps: try!(m.value_of("optional-deps").unwrap_or("true").parse_arg()),
